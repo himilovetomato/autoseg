@@ -32,6 +32,7 @@ np.random.seed(42)
 COLORS = {class_id: tuple(map(int, np.random.randint(0, 255, 3)))
           for class_id in CLASS_MAPPING.values()}
 
+
 def setup_sam():
     """
     Initialize the SAM model with the default checkpoint.
@@ -61,14 +62,14 @@ def process_image(image_path, class_id, class_label, mask_generator, output_dir)
     """
     # Define mask and visualization output paths
     mask_filename = output_dir / "masks" / \
-            f"class_{class_id}_{class_label}_{image_path.stem}_mask.png"
+        f"class_{class_id}_{class_label}_{image_path.stem}_mask.png"
     vis_filename = output_dir / "visualizations" / \
-            f"class_{class_id}_{class_label}_{image_path.stem}_visualization.png"
+        f"class_{class_id}_{class_label}_{image_path.stem}_visualization.png"
 
     # Skip processing if image has already been processed
     if os.path.exists(str(mask_filename)) or os.path.exists(str(vis_filename)):
         print(f"Skipping image {image_path} (already processed)")
-        return;
+        return
 
     # Read image
     image = cv2.imread(str(image_path))
@@ -76,13 +77,25 @@ def process_image(image_path, class_id, class_label, mask_generator, output_dir)
 
     # Generate masks
     masks = mask_generator.generate(image)
-    masks = sorted(masks, key=lambda x: x['area'], reverse=True)
+    # masks = sorted(masks, key=lambda x: x['area'], reverse=True)
+    # Find the mask that overlaps the center of the image
+    image_height, image_width, _ = image.shape
+    center_x, center_y = image_width // 2, image_height // 2
+    center_mask = None
+    for mask_info in masks:
+        mask = (mask_info['segmentation'].astype(
+            np.uint8) * 255).astype(np.uint8)
+        if mask[center_y, center_x] > 0:
+            center_mask = mask_info
+            break
 
     # Save masks for each detected object
-    if masks:
-        largest_mask = masks[0]
-        multi_class_mask = (largest_mask['segmentation'].astype(
-            np.uint8) * class_id).astype(np.uint8)
+    if center_mask:
+        # multi_class_mask = (center_mask['segmentation'].astype(
+        #     np.uint8) *  class_id).astype(np.uint8)
+
+        multi_class_mask = (center_mask['segmentation'].astype(
+            np.uint8) * (255 - class_id)).astype(np.uint8)
 
         # Save mask
         cv2.imwrite(str(mask_filename), multi_class_mask)
@@ -98,6 +111,9 @@ def process_image(image_path, class_id, class_label, mask_generator, output_dir)
 
 
 def main():
+    print('Running on ')
+    print(torch.cuda.get_device_name)
+
     # Setup paths
     input_dir = Path('/content/drive/MyDrive/Tomato disease dataset')
     output_dir = Path('/content/drive/MyDrive/autoseg/output')
@@ -140,7 +156,7 @@ def main():
         for image_path in pbar:
             try:
                 process_image(image_path, class_id, class_label,
-                                     mask_generator, output_dir)
+                              mask_generator, output_dir)
                 processed += 1
             except Exception as e:
                 print(f"Error processing {image_path}: {e}")
@@ -158,7 +174,8 @@ def main():
 
         # Class summary
         print(f"\nCompleted {class_label}:")
-        print(f"Successfully processed: {max(0, processed-errors)}/{total_images}")
+        print(f"Successfully processed: {
+              max(0, processed-errors)}/{total_images}")
         print(f"Errors: {errors}/{total_images}\n")
 
 
